@@ -7,20 +7,44 @@ import { z } from 'zod';
 
 const invoiceSchema = z.object({
   id: z.string(),
-  customerId: z.string(),
-  amount: z.coerce.number(),
-  status: z.enum(['pending', 'paid']),
+  customerId: z.string({
+    invalid_type_error: 'Please select a customer.',
+  }),
+  amount: z.coerce.number().gt(0, {
+    message: 'Please enter an amount greater than $0.',
+  }),
+  status: z.enum(['pending', 'paid'], {
+    invalid_type_error: 'Please select an invoice status.',
+  }),
   date: z.string(),
 });
 const Invoice = invoiceSchema.omit({ id: true, date: true });
 
-export const createInvoice = async (formData: FormData) => {
-  const { amount, customerId, status } = Invoice.parse({
+export type State = {
+  errors?: {
+    customerId?: string[];
+    amount?: string[];
+    status?: string[];
+  };
+  message?: string | null;
+};
+
+export const createInvoice = async (prevState: State, formData: FormData) => {
+  const validData = Invoice.safeParse({
     customerId: formData.get('customerId'),
     amount: formData.get('amount'),
     status: formData.get('status'),
   });
 
+  // * If form validation fails, return errors early. Otherwise, continue.
+  if (!validData.success) {
+    return {
+      errors: validData.error.flatten().fieldErrors,
+      message: 'Missing Fields. Failed to Create Invoice.',
+    };
+  }
+  // * Prepare data for insertion into the database
+  const { customerId, amount, status } = validData.data;
   const amountInCents = amount * 100;
   const date = new Date().toISOString().split('T')[0];
 
@@ -42,7 +66,6 @@ export const createInvoice = async (formData: FormData) => {
 };
 
 export const updateInvoice = async (id: string, formData: FormData) => {
-  console.log('editting...');
   const { amount, customerId, status } = Invoice.parse({
     customerId: formData.get('customerId'),
     amount: formData.get('amount'),
@@ -67,9 +90,9 @@ export const updateInvoice = async (id: string, formData: FormData) => {
 };
 
 export async function deleteInvoice(id: string) {
-  throw new Error('Failed to Delete Invoice');
+  // throw new Error('Failed to Delete Invoice');
 
-  // Unreachable code block
+  // // Unreachable code block
   try {
     await sql`DELETE FROM invoices WHERE id = ${id}`;
     revalidatePath('/dashboard/invoices');
